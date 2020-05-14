@@ -1,0 +1,19 @@
+.timeout 30000
+ATTACH DATABASE '/etc/pihole/gravity.db' AS OLD;
+ATTACH DATABASE './gravity_sync.db' AS BACKUP;
+
+BEGIN TRANSACTION;
+
+INSERT OR REPLACE INTO OLD."group" SELECT * FROM BACKUP."group";
+INSERT OR REPLACE INTO OLD.domain_audit SELECT * FROM BACKUP.domain_audit;
+
+INSERT OR REPLACE INTO OLD.domainlist SELECT * FROM BACKUP.domainlist;
+INSERT OR REPLACE INTO OLD.domainlist_by_group SELECT * FROM BACKUP.domainlist_by_group;
+
+INSERT OR REPLACE INTO OLD.adlist SELECT * FROM BACKUP.adlist;
+INSERT OR REPLACE INTO OLD.adlist_by_group SELECT * FROM BACKUP.adlist_by_group;
+
+INSERT OR REPLACE INTO OLD.client SELECT * FROM BACKUP.client;
+INSERT OR REPLACE INTO OLD.client_by_group SELECT * FROM BACKUP.client_by_group;
+
+COMMIT;
