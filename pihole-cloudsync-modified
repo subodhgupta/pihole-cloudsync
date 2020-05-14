@@ -38,7 +38,6 @@ gravity_sync_db='gravity_sync.db'
 gravity_sync_push_sql='gravity_sync_push.sql'
 gravity_sync_pull_sql='gravity_sync_pull.sql'
 gravity_db='gravity.db'
-gravity_db1='gravity.1.db'
 custom_list='custom.list'
 tables=(domain_audit domainlist domainlist_by_group adlist client client_by_group \"group\")
 #############################################################################
