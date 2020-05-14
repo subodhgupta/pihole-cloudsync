@@ -1,0 +1,171 @@
+#!/bin/bash
+
+############################################################################
+# pihole-cloudsync
+# Helper script to keep multiple Pi-holes' lists synchronized via Git
+# Original Project by Steve Jenkins (stevejenkins.com)
+# Original Project Home: https://github.com/stevejenkins/pihole-cloudsync
+
+# Modified version with limited functionality.
+# Version 1.0 - May 12, 2020 - Subodh Gupta (SubodhG@gmail.com)
+version='1.0'
+update='May 12, 2020'
+
+# USAGE: pihole-cloudsync <option>
+
+# OPTIONS:
+#  --push, --upload, --up, -u		Push (upload) your Pi-hole lists to a remote Git repo
+#  --pull, --download, --down, -d	Pull (download) your lists from a remote Git repo
+#  --help, -h, -?			Show the current version of pihole-cloudsync
+#  --version, -v			Show version number
+
+# EXAMPLES:
+#  'pihole-cloudsync --push' will push (upload) your lists to a remote Git repo
+#  'pihole-cloudsync --pull' will pull (download) your lists from a remote Git repo
+
+
+# Project Home: https://github.com/subodhgupta/pihole_cloudsync
+#############################################################################
+# CONSTANTS
+pihole_version=5
+personal_git_dir='/home/pi/projects/pihole_cloudsync'
+pihole_dir='/etc/pihole'
+setupvarsconf='setupVars.conf'
+gravity_sync_db='gravity_sync.db'
+gravity_sync_push_sql='gravity_sync_push.sql'
+gravity_sync_pull_sql='gravity_sync_pull.sql'
+gravity_db='gravity.db'
+gravity_db1='gravity.1.db'
+custom_list='custom.list'
+tables=(domain_audit domainlist domainlist_by_group adlist client client_by_group \"group\")
+#############################################################################
+
+push () {
+
+	if [ -f $personal_git_dir/$gravity_sync_db ]; then
+		echo "Deleting previous $personal_git_dir/$gravity_sync_db."
+		rm $personal_git_dir/$gravity_sync_db
+	fi
+	
+	#Create empty sqlite database
+	sqlite3 $personal_git_dir/$gravity_sync_db "VACUUM;"
+	
+	#Extract data from gravity db for sync.
+	sqlite3 < $personal_git_dir/$gravity_sync_push_sql
+	
+	#Copy custom list for sync.
+	cp $pihole_dir/$custom_list $personal_git_dir
+	
+	#Copy setupVars for sync.
+	cp $pihole_dir/$setupvarsconf $personal_git_dir
+	
+	cd $personal_git_dir || exit
+
+	CHANGED=$(git --work-tree=$personal_git_dir status --porcelain)
+	if [ -n "${CHANGED}" ]; then
+		echo 'Local Pi-hole lists are different than remote Git repo. Updating remote repo...';
+		rightnow=$(date +"%B %e, %Y %l:%M%p")
+		# Remove -q option if you don't want to run in "quiet" mode
+		git add .
+		git commit -m "Updated $rightnow" -q
+		git push -q
+		echo 'Done!';
+		#exit 0
+		else
+			echo 'Remote Git repo matches local Pi-hole lists. No further action required.';
+		#exit 0
+	fi
+	#rm $personal_git_dir/$gravity_sync_db
+}
+pull () {
+	cd $personal_git_dir || exit
+	git remote update > /dev/null
+	CHANGED=$(git log HEAD..origin/master --oneline)
+	if [ -n "${CHANGED}" ]; then
+        echo 'Remote Git repo is different than local Pi-hole lists. Updating local lists...';
+        # Remove -q option if you don't want to run in "quiet" mode
+        git fetch --all -q
+		git reset --hard origin/master -q
+		
+		sudo cp $personal_git_dir/$custom_list $pihole_dir
+		HOSTNAME=`hostname -I | awk '{print $1}'`
+		
+		# Change the ip address line in the setupVars.conf that was copied over.
+		sed -i "s/^IPV4_ADDRESS=.*/IPV4_ADDRESS=$HOSTNAME\/24/g" $personal_git_dir/$setupvarsconf
+		sudo cp $personal_git_dir/$setupvarsconf $pihole_dir
+		sudo sqlite3 < $personal_git_dir/$gravity_sync_pull_sql
+		
+		# Update of adlist on secondary pihole should follow it's own schedule
+		# Uncomment this if you want to trigger a gravity update for every sync.
+		# pihole -g
+		
+		# Restart DNS: This is not required if you are doing the gravity update.
+		# If you uncomment the gravity update, you can comment the following.
+		sudo pihole restartdns reload-lists
+        
+		echo 'Done!';
+        #exit 0
+	else
+		echo 'Local Pi-hole lists match remote Git repo. No further action required.';
+        #exit 0
+	fi
+}
+############################################################################
+# Check to see whether a command line option was provided
+if [ -z "$1" ]
+  then
+    echo "Missing command line option. Try --push, --pull, or --help."
+    #exit 1
+fi
+# Determine which action to perform (InitPush, InitPull, Push, Pull, or Help)
+for arg in "$@"
+do
+    # Push / Upload - Pushes updated local Pi-hole lists to remote Git repo
+    if [ "$arg" == "--push" ] || [ "$arg" == "--upload" ] || [ "$arg" == "--up" ] || [ "$arg" == "-u" ]
+    then
+	echo "$arg option detected. Running in Push/Upload mode."
+	push
+	#exit 0
+    # Pull / Download - Pulls updated Pi-hole lists from remote Git repo
+    elif [ "$arg" == "--pull" ] || [ "$arg" == "--download" ] || [ "$arg" == "--down" ]|| [ "$arg" == "-d" ]
+    then
+        echo "$arg option detected. Running in Pull/Download mode."
+	pull
+        #exit 0
+    # Help - Displays help dialog
+    elif [ "$arg" == "--help" ] || [ "$arg" == "-h" ] || [ "$arg" == "-?" ]
+    then
+	cat << EOF
+Usage: pihole-cloudsync <option>
+
+Options:
+  --push, --upload, --up, -u		Push (upload) your Pi-hole lists to a remote Git repo
+  --pull, --download, --down, -d	Pull (download) your lists from a remote Git repo
+  --help, -h, -?			Show this help dialog
+  --version, -v				Show the current version of pihole-cloudsync
+
+Examples:
+  'pihole-cloudsync --push' will push (upload) your lists to a Git repo
+  'pihole-cloudsync --pull' will pull (download) your lists from a Git repo
+
+Original Project by Steve Jenkins (stevejenkins.com)
+Original Project Home: https://github.com/stevejenkins/pihole-cloudsync
+Modified version with limited functionality.
+Modifted Project Home: https://github.com/subodhgupta/pihole_cloudsync
+EOF
+
+    # Version - Displays version number
+    elif [ "$arg" == "--version" ] || [ "$arg" == "-v" ]
+	then
+	echo 'pihole-cloudsync v'$version' - Updated '"$update";
+	echo 'Original Project by Steve Jenkins (stevejenkins.com)';
+	echo 'Original Project Home: https://github.com/stevejenkins/pihole-cloudsync';
+	echo 'Modified version with limited functionality.'
+	echo 'Modifted Project Home: https://github.com/subodhgupta/pihole_cloudsync';
+
+    # Invalid command line option was passed
+    else
+	echo "Invalid command line option. Try --push, --pull, or --help."
+	#exit 1
+    fi
+done
